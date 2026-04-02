@@ -41,7 +41,7 @@
       font-size: 0.95rem;
     }
 
-    input {
+    textarea {
       width: 100%;
       padding: 10px;
       margin-top: 6px;
@@ -50,6 +50,8 @@
       background: #0d1117;
       color: #e6edf3;
       font-size: 1rem;
+      height: 120px;
+      resize: vertical;
     }
 
     button {
@@ -68,13 +70,13 @@
       background: #2ea043;
     }
 
-    .secondary-btn {
-      background: #58a6ff;
+    .copy-btn {
+      background: #4ade80;
       color: #0d1117;
     }
 
-    .secondary-btn:hover {
-      background: #79c0ff;
+    .copy-btn:hover {
+      background: #22c55e;
     }
 
     .output {
@@ -87,48 +89,11 @@
       font-size: 0.95rem;
     }
 
-    .row {
-      display: flex;
-      gap: 20px;
-      flex-wrap: wrap;
-      margin-top: 20px;
-    }
-
-    .card {
-      flex: 1 1 350px;
-      background: #161b22;
-      padding: 20px;
-      border-radius: 12px;
-      border: 1px solid #30363d;
-    }
-
-    /* نافذة المجال */
-    .modal {
-      position: fixed;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      background: rgba(0,0,0,0.6);
-      display: none;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .modal-content {
-      background: #161b22;
-      padding: 20px;
-      border-radius: 12px;
-      width: 350px;
-      border: 1px solid #30363d;
+    .footer {
       text-align: center;
-    }
-
-    .close-btn {
-      background: #da3633;
-      margin-top: 15px;
-    }
-
-    .close-btn:hover {
-      background: #f85149;
+      margin-top: 30px;
+      color: #6e7681;
+      font-size: 0.9rem;
     }
   </style>
 </head>
@@ -138,52 +103,39 @@
   <div class="container">
     <h1>النظام الترددي اللغوي</h1>
 
-    <h2>إعدادات النظام</h2>
-
-    <label>f₀ (هرتز):</label>
-    <input id="f0Input" type="number" value="1000000">
-
-    <label>Δf (هرتز):</label>
-    <input id="dfInput" type="number" step="0.0001" value="0.0001">
-
-    <button class="secondary-btn" onclick="showRange()">عرض المجال الترددي</button>
-
     <div class="row">
 
-      <!-- كلمة → تردد -->
       <div class="card">
-        <h2>تحويل كلمة إلى تردد</h2>
-        <label>أدخل كلمة عربية:</label>
-        <input id="wordInput" type="text" placeholder="مثال: ، نبيل، يزن">
-        <button onclick="encodeWord()">تحويل</button>
-        <div class="output" id="wordToFreqOutput">—</div>
-        <button class="secondary-btn" onclick="copyFreq()">نسخ التردد</button>
+        <h2>تحويل جملة إلى ترددات</h2>
+        <label>أدخل نصًا عربيًا (يمكن أن يكون مقالة كاملة):</label>
+        <textarea id="sentenceInput" placeholder="ألصق هنا أي نص طويل..."></textarea>
+        <button onclick="encodeSentence()">تحويل</button>
+        <button class="copy-btn" onclick="copyAllFreqs()">نسخ جميع الترددات</button>
+        <div class="output" id="encodeOutput">—</div>
       </div>
 
-      <!-- تردد → كلمة -->
       <div class="card">
-        <h2>تحويل تردد إلى كلمة</h2>
-        <label>أدخل التردد (Hz):</label>
-        <input id="freqInput" type="number" placeholder="مثال: 2300005">
-        <button onclick="decodeFreq()">تحويل</button>
-        <div class="output" id="freqToWordOutput">—</div>
+        <h2>تحويل ترددات إلى جملة</h2>
+        <label>أدخل الترددات (كل تردد في سطر):</label>
+        <textarea id="freqListInput"></textarea>
+        <button onclick="decodeFreqList()">تحويل</button>
+        <div class="output" id="decodeOutput">—</div>
       </div>
 
     </div>
-  </div>
 
-  <!-- نافذة المجال -->
-  <div class="modal" id="rangeModal">
-    <div class="modal-content">
-      <h2>المجال الترددي للنظام</h2>
-      <div id="rangeInfo" style="margin-top:10px; font-family:monospace;"></div>
-      <button class="close-btn" onclick="closeRange()">إغلاق</button>
+    <div class="footer">
+      م: رأفت عمر — تعديل LMAX=12 بواسطة برهوم
     </div>
+
   </div>
 
 <script>
   const B = 32;
-  const LMAX = 8;
+  const LMAX = 12;
+
+  let f0 = 100000;
+  let df = 1;
 
   const indexToChar = {
     0:"",1:"ا",2:"ب",3:"ت",4:"ث",5:"ج",6:"ح",7:"خ",
@@ -197,15 +149,20 @@
     if (ch) charToIndex[ch] = parseInt(i);
   }
 
-  function normalizeWord(w){ return w.replace(/\s+/g,"").trim(); }
+  function splitWord(word) {
+    const blocks = [];
+    for (let i = 0; i < word.length; i += LMAX) {
+      blocks.push(word.slice(i, i + LMAX));
+    }
+    return blocks;
+  }
 
   function wordToCode(word){
-    const w = normalizeWord(word);
     const c = new Array(LMAX).fill(0);
     let pos = 0;
-    for (let i = w.length - 1; i >= 0; i--){
-      const idx = charToIndex[w[i]];
-      if (idx === undefined) throw new Error("حرف غير مدعوم: " + w[i]);
+    for (let i = word.length - 1; i >= 0; i--){
+      const idx = charToIndex[word[i]];
+      if (idx === undefined) throw new Error("حرف غير مدعوم: " + word[i]);
       c[pos++] = idx;
     }
     let C = 0n;
@@ -229,80 +186,56 @@
     return w;
   }
 
-  function encodeWord(){
-    const f0 = Number(document.getElementById("f0Input").value);
-    const df = Number(document.getElementById("dfInput").value);
-    const word = document.getElementById("wordInput").value;
+  function encodeSentence(){
+    const sentence = document.getElementById("sentenceInput").value.trim();
+    const words = sentence.split(/\s+/);
+    let allFreqs = [];
 
-    try {
-      const C = wordToCode(word);
-      const f = f0 + Number(C) * df;
+    let totalBlocks = 0;
 
-      const Cmax = (BigInt(B) ** BigInt(LMAX)) - 1n;
-      const fmax = f0 + Number(Cmax) * df;
+    words.forEach(word => {
+      const blocks = splitWord(word);
+      totalBlocks += blocks.length;
 
-      if (f > fmax) {
-        document.getElementById("wordToFreqOutput").textContent =
-          "⚠ التردد الناتج خارج نطاق النظام";
-        return;
-      }
+      blocks.forEach(block => {
+        const C = wordToCode(block);
+        const f = f0 + Number(C) * df;
+        allFreqs.push(f);
+      });
+    });
 
-      document.getElementById("wordToFreqOutput").textContent =
-        `${f.toFixed(6)} Hz`;
-
-    } catch(e){
-      document.getElementById("wordToFreqOutput").textContent = "خطأ: " + e.message;
-    }
-  }
-
-  function decodeFreq(){
-    const f0 = Number(document.getElementById("f0Input").value);
-    const df = Number(document.getElementById("dfInput").value);
-    const f = Number(document.getElementById("freqInput").value);
-
-    if (f < f0) {
-      document.getElementById("freqToWordOutput").textContent =
-        "⚠ التردد أقل من الحد الأدنى للنظام";
-      return;
-    }
-
-    const C = Math.round((f - f0) / df);
-
-    const Cmax = (BigInt(B) ** BigInt(LMAX)) - 1n;
-    if (BigInt(C) > Cmax) {
-      document.getElementById("freqToWordOutput").textContent =
-        "⚠ التردد أعلى من الحد الأقصى للنظام";
-      return;
-    }
-
-    const word = codeToWord(BigInt(C));
-    document.getElementById("freqToWordOutput").textContent = word || "—";
-  }
-
-  function copyFreq(){
-    const text = document.getElementById("wordToFreqOutput").textContent;
-    navigator.clipboard.writeText(text);
-  }
-
-  function showRange(){
-    const f0 = Number(document.getElementById("f0Input").value);
-    const df = Number(document.getElementById("dfInput").value);
-
-    const Cmax = (BigInt(B) ** BigInt(LMAX)) - 1n;
-    const fmax = f0 + Number(Cmax) * df;
-
-    document.getElementById("rangeInfo").innerHTML = `
-      <b>أصغر تردد:</b> ${f0} Hz<br>
-      <b>أكبر تردد:</b> ${fmax.toLocaleString()} Hz<br><br>
-      <b>عدد الكلمات الممكنة:</b><br>
-      ${Cmax.toLocaleString()}
+    let html = `
+      <p>عدد الكلمات: ${words.length}</p>
+      <p>عدد البلوكات: ${totalBlocks}</p>
+      <p>عدد الترددات الناتجة: ${allFreqs.length}</p>
+      <textarea style="width:100%;height:250px;background:#0d1117;color:white;border:1px solid #30363d;border-radius:8px;">${allFreqs.join("\n")}</textarea>
     `;
 
-    document.getElementById("rangeModal").style.display = "flex";
+    document.getElementById("encodeOutput").innerHTML = html;
+
+    window.lastFreqList = allFreqs;
   }
 
-  function closeRange(){
-    document.getElementById("rangeModal").style.display = "none";
+  function copyAllFreqs(){
+    if (!window.lastFreqList) return;
+    navigator.clipboard.writeText(window.lastFreqList.join("\n"));
+  }
+
+  function decodeFreqList(){
+    const input = document.getElementById("freqListInput").value.trim();
+    const lines = input.split(/\n+/);
+    const words = [];
+
+    lines.forEach(line => {
+      const freq = Number(line.trim());
+      if (isNaN(freq)) return;
+
+      const C = Math.round((freq - f0) / df);
+      const block = codeToWord(BigInt(C));
+      words.push(block);
+    });
+
+    document.getElementById("decodeOutput").textContent = words.join(" ");
   }
 </script>
 
